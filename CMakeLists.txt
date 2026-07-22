@@ -9,9 +9,13 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 # This assumes the SDL source is available in vendored/SDL
 add_subdirectory(vendored/SDL EXCLUDE_FROM_ALL)
 
+# glad built as library
+add_library(glad STATIC glad/src/glad.c)
+target_include_directories(glad PUBLIC glad/include)
+
 # Create your game executable target as usual
 # WIN32 option is ignored on macOS and Linux
 add_executable(myproj WIN32 src/main.cpp)
 
-# Link to the actual SDL3 library.
-target_link_libraries(myproj PRIVATE SDL3::SDL3)
+# Link to SDL3 and glad libraries
+target_link_libraries(myproj PRIVATE SDL3::SDL3 glad)
