@@ -1,2 +1,11 @@
 BasedOnStyle: LLVM
 PointerAlignment: Left
+
+BinPackArguments: false
+BinPackParameters: false
+
+AlignAfterOpenBracket: Align
+ContinuationIndentWidth: 4
+
+AllowAllArgumentsOnNextLine: true
+PenaltyBreakBeforeFirstCallParameter: 0

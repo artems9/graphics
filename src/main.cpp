@@ -1,16 +1,21 @@
+// Third Party Libraries
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
+// Standard Template Library
+#include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
-// ===================================================================
-// ===================================================================
-// ===================================================================
-
 struct SDLApplication {
-  // member variables
+
+  // ===================================================================
+  // ====================== member variables ===========================
+  // ===================================================================
+
   SDL_Window* window_{nullptr};
   SDL_GLContext glContext_{nullptr};
   bool running_{true};
@@ -29,20 +34,10 @@ struct SDLApplication {
   GLuint vao_{0};
   GLuint vbo_{0};
   GLuint shaderProgram_{0};
-  const std::string vertexShaderSource_{
-      "#version 410 core\n"
-      "in vec4 position;\n"
-      "void main()\n"
-      "{\n"
-      "   gl_Position = vec4(position.x, position.y, position.z, position.w);\n"
-      "}\n"};
-  const std::string fragmentShaderSource_{
-      "#version 410 core\n"
-      "out vec4 color;\n"
-      "void main()\n"
-      "{\n"
-      "   color = vec4(1.0f, 0.5f, 0.0f, 1.0f);\n"
-      "}\n"};
+
+  // ===================================================================
+  // ====================== constructor ================================
+  // ===================================================================
 
   // constructor
   SDLApplication() {
@@ -52,31 +47,39 @@ struct SDLApplication {
                                SDL_GetError());
     }
 
-    // set OPENGL context attributes
-    // latest version supported on MACOS is 4.1
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-    // uses modern version of OPENGL, deprecated functions are disabled
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-                        SDL_GL_CONTEXT_PROFILE_CORE);
-    // enable double buffering to avoid single buffer screen flickering
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    // requests 24-bit depth buffer, storing how far away every pixel is
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    setOpenglContextAttributes();
 
-    window_ = SDL_CreateWindow("MyWindow",          // window title
-                               800,                 // width in pixels
-                               600,                 // height in pixels
-                               SDL_WINDOW_RESIZABLE // flags go here
-                                   | SDL_WINDOW_OPENGL);
+    createWindow();
 
-    if (!window_) {
-      SDL_Quit();
-      throw std::runtime_error(std::string("Window creation failed: ") +
-                               SDL_GetError());
-    }
+    initOpengl();
 
-    // attach OPENGL context to SDL window
+    setupVertices();
+
+    setupPipeline();
+
+    // start clock here to:
+    // exclude SDL and OPENGL initialization and setup times
+    // handle (edge case) first call in loop
+    frameStart_ = SDL_GetTicksNS();
+  }
+
+  // ===================================================================
+  // ====================== destructor =================================
+  // ===================================================================
+
+  // destructor
+  ~SDLApplication() {
+    SDL_GL_DestroyContext(glContext_);
+    SDL_DestroyWindow(window_);
+    SDL_Quit();
+  }
+
+  // ===================================================================
+  // ====================== member functions ===========================
+  // ===================================================================
+
+  void initOpengl() {
+    // create the OPENGL context and attach to SDL window
     // tells SDL_GL_SwapWindow() WHERE to display
     glContext_ = SDL_GL_CreateContext(window_);
     if (!glContext_) {
@@ -92,7 +95,7 @@ struct SDLApplication {
       throw std::runtime_error("Failed to initialize GLAD");
     }
 
-    // verify the OPENGL setup works as intended
+    // print OPENGL info and verify the OPENGL setup works as intended
     std::cout << "Vendor   : " << glGetString(GL_VENDOR) << '\n';
     std::cout << "Renderer : " << glGetString(GL_RENDERER) << '\n';
     std::cout << "Version  : " << glGetString(GL_VERSION) << '\n';
@@ -101,27 +104,60 @@ struct SDLApplication {
 
     // setup vsync 1 = on, 0 = off, -1 = adaptive (falls back if unsupported)
     SDL_GL_SetSwapInterval(1);
-
-    setupVertices();
-
-    setupPipeline();
-
-    // start clock here to:
-    // exclude SDL and OPENGL initialization and setup times
-    // handle (edge case) first call in loop
-    frameStart_ = SDL_GetTicksNS();
   }
 
-  // destructor
-  ~SDLApplication() {
-    SDL_GL_DestroyContext(glContext_);
-    SDL_DestroyWindow(window_);
-    SDL_Quit();
+  // SDL window creation
+  void createWindow() {
+    window_ = SDL_CreateWindow("MyWindow",          // window title
+                               800,                 // width in pixels
+                               600,                 // height in pixels
+                               SDL_WINDOW_RESIZABLE // flags go here
+                                   | SDL_WINDOW_OPENGL);
+
+    if (!window_) {
+      SDL_Quit();
+      throw std::runtime_error(std::string("Window creation failed: ") +
+                               SDL_GetError());
+    }
+  }
+
+  // Configures the OpenGL context attributes before creating the context.
+  void setOpenglContextAttributes() {
+    // latest version supported on MACOS is 4.1
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+
+    // uses modern version of OPENGL, deprecated functions are disabled
+    SDL_GL_SetAttribute(
+        SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+
+    // enable double buffering to avoid single buffer screen flickering
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+    // request 24-bit depth buffer for depth testing
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
   }
 
   void setupPipeline() {
+    const std::string vertexShaderSource =
+        getShaderSource("./shaders/vert.glsl");
+    const std::string fragmentShaderSource =
+        getShaderSource("./shaders/frag.glsl");
+
     shaderProgram_ =
-        createShaderProgram(vertexShaderSource_, fragmentShaderSource_);
+        createShaderProgram(vertexShaderSource, fragmentShaderSource);
+  }
+
+  std::string getShaderSource(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+      throw std::runtime_error("Could not open shader file: " + path);
+    }
+
+    std::stringstream buffer;
+    // get whole file into stream
+    buffer << file.rdbuf();
+    return buffer.str();
   }
 
   GLuint createShaderProgram(const std::string& vertexShaderSource,
@@ -146,9 +182,32 @@ struct SDLApplication {
     return programObj;
   }
 
+  void verifyCompilation(GLuint shaderObj) {
+    GLint compilationResult;
+    glGetShaderiv(shaderObj, GL_COMPILE_STATUS, &compilationResult);
+
+    if (compilationResult == GL_FALSE) {
+      // find require buffer size for the info log
+      GLint msgLength;
+      glGetShaderiv(shaderObj, GL_INFO_LOG_LENGTH, &msgLength);
+
+      // allocate buffer for outputting error message
+      std::string errorMsg(msgLength, '\0');
+
+      // Retrieve the shader compiler's error log.
+      glGetShaderInfoLog(shaderObj, msgLength, nullptr, errorMsg.data());
+
+      throw std::runtime_error("Shader compilation failed:\n" + errorMsg);
+
+      // delete broken shader
+      glDeleteShader(shaderObj);
+    }
+  }
+
   GLuint getCompiledShader(GLuint type, const std::string& shaderSource) {
     GLuint shaderObj;
 
+    // Create shader object specifically for the type passed in
     if (type == GL_VERTEX_SHADER) {
       shaderObj = glCreateShader(GL_VERTEX_SHADER);
     } else if (type == GL_FRAGMENT_SHADER) {
@@ -159,6 +218,8 @@ struct SDLApplication {
     glShaderSource(shaderObj, 1, &src, nullptr);
     glCompileShader(shaderObj);
 
+    verifyCompilation(shaderObj);
+
     return shaderObj;
   }
 
@@ -166,13 +227,23 @@ struct SDLApplication {
     // specify vertices as data for CPU
     // GLfloat is more compatible across different architectures
     const std::vector<GLfloat> vertexPosition{
-        // x    y     z
-        -0.8f, -0.8f, 0.0f, // vertex 1
-        0.8f,  -0.8f, 0.0f, // vertex 2
-        0.0f,  0.8f,  0.0f, // vertex 3
+        // vertex 1 (x, y, z)
+        -0.8f,
+        -0.8f,
+        0.0f,
+
+        // vertex 2 (x, y, z)
+        0.8f,
+        -0.8f,
+        0.0f,
+
+        // vertex 3 (x, y, z)
+        0.0f,
+        0.8f,
+        0.0f,
     };
 
-    // SETUP / COPY DATA OVER TO GPU
+    // specify how data it setup on the GPU
 
     // generate x amount of VAO (instructions for reading the VBO)
     glGenVertexArrays(1, &vao_);
@@ -189,17 +260,17 @@ struct SDLApplication {
     // so subsequent functions operating on GL_ARRAY_BUFFER refer to bound vbo
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
 
-    // populate VBO with data
-    glBufferData(GL_ARRAY_BUFFER,                         // target
-                 vertexPosition.size() * sizeof(GLfloat), // size
+    // populate target buffer used by GPU, with data from VBO (vertexPositions)
+    glBufferData(GL_ARRAY_BUFFER,                         // target buffer
+                 vertexPosition.size() * sizeof(GLfloat), // size in bytes
                  vertexPosition.data(),                   // pointer to data
                  GL_STATIC_DRAW);                         // usage type
 
     // populate the currently bound VAO with instructions
     // by telling opengl how to interpret currently bound VBO
     glVertexAttribPointer(
-        0,        // attribute index
-        3,        // num. components per attribute
+        0,        // attribute index, corresponds to glEnableVertexAttribArray
+        3,        // num. components per attribute (x, y, z)
         GL_FLOAT, // type
         GL_FALSE, // data value normalization
         0,        // stride (byte offset between attributes)
@@ -209,8 +280,9 @@ struct SDLApplication {
     // Enable attribute 0 for input to the vertex shader.
     glEnableVertexAttribArray(0);
 
-    // cleanup
+    // Unbind currently bound VAO
     glBindVertexArray(0);
+    // Disable any attributes previously enabled in VAO
     glDisableVertexAttribArray(0);
   }
 
@@ -237,18 +309,14 @@ struct SDLApplication {
 
   void renderFrame() {
     preDraw();
-
     draw();
-
-    // update screen (swap buffers)
     SDL_GL_SwapWindow(window_);
   }
 
+  // set up OPENGL state
   void preDraw() {
-
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-
     // set up viewport
     // maps Normalized Device Coordinates into framebuffer size of window
     glViewport(0, 0, 800, 600);
@@ -257,10 +325,16 @@ struct SDLApplication {
     glUseProgram(shaderProgram_);
   }
 
+  // OPENGL draw calls
   void draw() {
+    // enable attributes
     glBindVertexArray(vao_);
+    // select VBO we want to enable
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+    // render data
     glDrawArrays(GL_TRIANGLES, 0, 3);
+    // stop using current pipeline, unnecessary if we only have 1 pipleine
+    glUseProgram(0);
   }
 
   void updateFpsCounter(const double frameTime) {
@@ -324,9 +398,9 @@ int main(int argc, char* argv[]) {
     app.run();
   } catch (const std::exception& e) {
     SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Error: %s", e.what());
-    return 1;
+    return EXIT_FAILURE;
   }
-  return 0;
+  return EXIT_SUCCESS;
 }
 
 // ===================================================================
