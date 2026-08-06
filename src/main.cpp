@@ -1,6 +1,8 @@
 // Third Party Libraries
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 // Standard Template Library
 #include <cstdlib>
 #include <fstream>
@@ -9,13 +11,10 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <print>
+
 
 struct SDLApplication {
-
-  // ===================================================================
-  // ====================== member variables ===========================
-  // ===================================================================
-
   SDL_Window* window_{nullptr};
   SDL_GLContext glContext_{nullptr};
   bool running_{true};
@@ -31,13 +30,21 @@ struct SDLApplication {
   double accumulatedTime_{0.0};
 
   // triangle
+  // Vertex Array Object (VAO) - How to interpret the data.
+  // Stores the vertex attribute layout and the VBO/IBO bindings needed to
+  // interpret vertex data.
   GLuint vao_{0};
+  // Vertex Buffer Object (VBO) - What the data is.
+  // Stores vertex data (positions, colors, UVs, etc.) in GPU memory.
   GLuint vbo_{0};
+  // Index Buffer Object (IBO) - Which vertices to draw.
+  // Stores indices that define how vertices are reused to form primitives.
+  GLuint ibo_{0};
   GLuint shaderProgram_{0};
 
-  // ===================================================================
-  // ====================== constructor ================================
-  // ===================================================================
+  float u_offset_{0.0f};
+
+// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   // constructor
   SDLApplication() {
@@ -63,9 +70,7 @@ struct SDLApplication {
     frameStart_ = SDL_GetTicksNS();
   }
 
-  // ===================================================================
-  // ====================== destructor =================================
-  // ===================================================================
+// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   // destructor
   ~SDLApplication() {
@@ -74,9 +79,7 @@ struct SDLApplication {
     SDL_Quit();
   }
 
-  // ===================================================================
-  // ====================== member functions ===========================
-  // ===================================================================
+// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   void initOpengl() {
     // create the OPENGL context and attach to SDL window
@@ -224,26 +227,25 @@ struct SDLApplication {
   }
 
   void setupVertices() {
-    // specify vertices as data for CPU
-    // GLfloat is more compatible across different architectures
-    const std::vector<GLfloat> vertexPosition{
-        // vertex 1 (x, y, z)
-        -0.8f,
-        -0.8f,
-        0.0f,
 
-        // vertex 2 (x, y, z)
-        0.8f,
-        -0.8f,
-        0.0f,
-
-        // vertex 3 (x, y, z)
-        0.0f,
-        0.8f,
-        0.0f,
+    // OPENGL uses counter clockwise winding order by default
+    // rendering QUAD
+    const std::vector<GLfloat> vertexData{
+        // clang-format off
+        // Vertex 0 (bottom left)
+        -0.5f, -0.5f, 0.0f, // position x, y, z
+        1.0f, 0.0f, 0.0f,   // color    r, b, b
+        // Vertex 1 (bottom right)
+        0.5f, -0.5f, 0.0f, // position
+        0.0f, 1.0f, 0.0f, // color
+        // Vertex 2 (top right)
+        0.5f, 0.5f, 0.0f, // position
+        0.0f, 0.0f, 1.0f, // color
+        // Vertex 3 (top left)
+        -0.5f, 0.5f, 0.0f, // position
+        1.0f, 0.0f, 1.0f, // color
+        // clang-format on
     };
-
-    // specify how data it setup on the GPU
 
     // generate x amount of VAO (instructions for reading the VBO)
     glGenVertexArrays(1, &vao_);
@@ -251,6 +253,7 @@ struct SDLApplication {
     // select VAO to use
     glBindVertexArray(vao_);
 
+    //===================/ SETUP VBO /===================
     // generate x amount of VBO (actual vertex data)
     glGenBuffers(1, &vbo_);
 
@@ -261,11 +264,23 @@ struct SDLApplication {
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
 
     // populate target buffer used by GPU, with data from VBO (vertexPositions)
-    glBufferData(GL_ARRAY_BUFFER,                         // target buffer
-                 vertexPosition.size() * sizeof(GLfloat), // size in bytes
-                 vertexPosition.data(),                   // pointer to data
-                 GL_STATIC_DRAW);                         // usage type
+    glBufferData(GL_ARRAY_BUFFER,                     // target buffer
+                 vertexData.size() * sizeof(GLfloat), // size in bytes
+                 vertexData.data(),                   // pointer to data
+                 GL_STATIC_DRAW);                     // usage type
 
+    const std::vector<GLuint> iboData{0, 1, 3, 1, 2, 3};
+
+    // setup IBO (Index Buffer Object) or EBO (Element Buffer Object)
+    glGenBuffers(1, &ibo_);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_);
+    // populate IBO
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 iboData.size() * sizeof(GLuint),
+                 iboData.data(),
+                 GL_STATIC_DRAW);
+
+    // ================== SETUP VAO POSITION =====================
     // populate the currently bound VAO with instructions
     // by telling opengl how to interpret currently bound VBO
     glVertexAttribPointer(
@@ -273,17 +288,31 @@ struct SDLApplication {
         3,        // num. components per attribute (x, y, z)
         GL_FLOAT, // type
         GL_FALSE, // data value normalization
-        0,        // stride (byte offset between attributes)
-        (void*)0  // offset into the bound VBO where this attribute begins
+        sizeof(GLfloat) * 6, // stride (byte offset between attribute)
+        nullptr // offset into the bound VBO where this attribute begins
     );
-
-    // Enable attribute 0 for input to the vertex shader.
+    // Enable attributes for input to the vertex shader.
     glEnableVertexAttribArray(0);
+
+    // ================== SETUP VAO COLOR =====================
+    glVertexAttribPointer(
+        1,        // attribute index, corresponds to glEnableVertexAttribArray
+        3,        // num. components per attribute (r, g, b)
+        GL_FLOAT, // type
+        GL_FALSE, // data value normalization
+        sizeof(GLfloat) * 6, // stride (byte offset between attribute)
+        reinterpret_cast<const void*>(
+            sizeof(GLfloat) *
+            3) // offset into the bound VBO where this attribute begins
+    );
+    // Enable attribute for input to the vertex shader.
+    glEnableVertexAttribArray(1);
 
     // Unbind currently bound VAO
     glBindVertexArray(0);
     // Disable any attributes previously enabled in VAO
     glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
   }
 
   // infinite loop
@@ -315,14 +344,54 @@ struct SDLApplication {
 
   // set up OPENGL state
   void preDraw() {
+    // Disable depth test and face culling
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
+
     // set up viewport
     // maps Normalized Device Coordinates into framebuffer size of window
     glViewport(0, 0, 800, 600);
+
+    // Initialize clear color (background of screen)
     glClearColor(1.f, 1.f, 0.f, 1.f);
+
+    // Clear color and depth buffers
     glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+
+    // Use shader program
     glUseProgram(shaderProgram_);
+
+
+    // Model transformation by translating our object into world space
+    glm::mat4 translate = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, u_offset_, 0.0f));
+
+    // uniform vairable name must match the one declared across shaders
+    GLint uniformLocation = glGetUniformLocation(shaderProgram_, "u_modelMatrix");
+     
+    if (uniformLocation >= 0) {
+        glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &translate[0][0]);
+      } else {
+        std::println("Could not find u_offset location");
+        exit(EXIT_FAILURE);
+      }
+
+
+
+    // Projection matrix (in perspective)
+    glm::mat4 perspective = glm::perspective(glm::radians(45.0f), 800.0f/
+    400.0f, 
+    0.1f,   // how close we can see
+    10.0f); // how far away we can see
+
+    // Retrieve location of perspective matrix uniform
+    GLint uPerspectiveLocation = glGetUniformLocation(shaderProgram_, "u_perspectiveProjection");
+     
+    if (uPerspectiveLocation >= 0) {
+        glUniformMatrix4fv(uPerspectiveLocation, 1, GL_FALSE, &perspective[0][0]);
+      } else {
+        std::println("Could not find u_pespectiveProjection location");
+        exit(EXIT_FAILURE);
+      }
   }
 
   // OPENGL draw calls
@@ -331,8 +400,8 @@ struct SDLApplication {
     glBindVertexArray(vao_);
     // select VBO we want to enable
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-    // render data
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    // render indexed data
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
     // stop using current pipeline, unnecessary if we only have 1 pipleine
     glUseProgram(0);
   }
@@ -380,17 +449,30 @@ struct SDLApplication {
   void getInput() {
     SDL_Event event;
 
+    // SDL_PollEvent() automatically calls SDL_PumpEvents() before checking event queue, handles everything that happened since last frame
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_EVENT_QUIT) {
         running_ = false;
       }
+
+    }
+    // tells you the CURRENT STATE of the keyboard (every frame)
+    const bool* keys = SDL_GetKeyboardState(nullptr);
+
+    // handle UP key
+    if (keys[SDL_SCANCODE_UP] == true) {
+      u_offset_ += 0.01f;
+      std::println("Offset is: {}", u_offset_);
+    }
+    // handle DOWN key
+    if (keys[SDL_SCANCODE_DOWN] == true) {
+      u_offset_ -= 0.01f;
+      std::println("Offset is: {}", u_offset_);
     }
   }
 };
 
-// ===================================================================
-// ===================================================================
-// ===================================================================
+// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 int main(int argc, char* argv[]) {
   try {
@@ -403,6 +485,5 @@ int main(int argc, char* argv[]) {
   return EXIT_SUCCESS;
 }
 
-// ===================================================================
-// ===================================================================
-// ===================================================================
+// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+

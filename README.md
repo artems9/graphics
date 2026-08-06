@@ -1,4 +1,4 @@
-- 2D platformer or 3D opengl renderer planned
+- why? because i want to understand how 3D graphics work
 
 - implement interpolation once I have objects whose positions change over time and get rendered.
 
