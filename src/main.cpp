@@ -7,12 +7,11 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <print>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <print>
-
 
 struct SDLApplication {
   SDL_Window* window_{nullptr};
@@ -42,9 +41,11 @@ struct SDLApplication {
   GLuint ibo_{0};
   GLuint shaderProgram_{0};
 
-  float u_offset_{0.0f};
+  float u_offsetY_{0.0f};
+  float u_offsetX_{0.0f};
+  float u_offsetZ_{-3.0f};  // start at -3 for immediate visibility
 
-// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   // constructor
   SDLApplication() {
@@ -70,7 +71,7 @@ struct SDLApplication {
     frameStart_ = SDL_GetTicksNS();
   }
 
-// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   // destructor
   ~SDLApplication() {
@@ -79,7 +80,7 @@ struct SDLApplication {
     SDL_Quit();
   }
 
-// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   void initOpengl() {
     // create the OPENGL context and attach to SDL window
@@ -362,36 +363,41 @@ struct SDLApplication {
     glUseProgram(shaderProgram_);
 
 
+    // ------------------- TRANSLATION -----------------------
+
     // Model transformation by translating our object into world space
-    glm::mat4 translate = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, u_offset_, 0.0f));
+    glm::mat4 translate = glm::translate(
+        glm::mat4(1.0f), glm::vec3(u_offsetX_, u_offsetY_, u_offsetZ_));
 
     // uniform vairable name must match the one declared across shaders
-    GLint uniformLocation = glGetUniformLocation(shaderProgram_, "u_modelMatrix");
-     
+    GLint uniformLocation =
+        glGetUniformLocation(shaderProgram_, "u_modelMatrix");
+
     if (uniformLocation >= 0) {
-        glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &translate[0][0]);
-      } else {
-        std::println("Could not find u_offset location");
-        exit(EXIT_FAILURE);
-      }
+      glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &translate[0][0]);
+    } else {
+      std::println("Could not find u_modelMatrix location");
+      exit(EXIT_FAILURE);
+    }
 
-
+    // ------------------- PROJECTION -----------------------
 
     // Projection matrix (in perspective)
-    glm::mat4 perspective = glm::perspective(glm::radians(45.0f), 800.0f/
-    400.0f, 
-    0.1f,   // how close we can see
-    10.0f); // how far away we can see
+    glm::mat4 perspective = glm::perspective(glm::radians(45.0f),
+                                             800.0f / 400.0f,
+                                             0.1f,   // how close we can see
+                                             10.0f); // how far we can see
 
     // Retrieve location of perspective matrix uniform
-    GLint uPerspectiveLocation = glGetUniformLocation(shaderProgram_, "u_perspectiveProjection");
-     
+    GLint uPerspectiveLocation =
+        glGetUniformLocation(shaderProgram_, "u_perspectiveProjection");
+
     if (uPerspectiveLocation >= 0) {
-        glUniformMatrix4fv(uPerspectiveLocation, 1, GL_FALSE, &perspective[0][0]);
-      } else {
-        std::println("Could not find u_pespectiveProjection location");
-        exit(EXIT_FAILURE);
-      }
+      glUniformMatrix4fv(uPerspectiveLocation, 1, GL_FALSE, &perspective[0][0]);
+    } else {
+      std::println("Could not find u_pespectiveProjection location");
+      exit(EXIT_FAILURE);
+    }
   }
 
   // OPENGL draw calls
@@ -449,26 +455,41 @@ struct SDLApplication {
   void getInput() {
     SDL_Event event;
 
-    // SDL_PollEvent() automatically calls SDL_PumpEvents() before checking event queue, handles everything that happened since last frame
+    // SDL_PollEvent() automatically calls SDL_PumpEvents() before checking
+    // event queue, handles everything that happened since last frame
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_EVENT_QUIT) {
         running_ = false;
       }
-
     }
     // tells you the CURRENT STATE of the keyboard (every frame)
     const bool* keys = SDL_GetKeyboardState(nullptr);
 
-    // handle UP key
+    // X axis (left/right)
+    if (keys[SDL_SCANCODE_LEFT] == true) {
+      u_offsetX_ -= 0.01f;
+    }
+    if (keys[SDL_SCANCODE_RIGHT] == true) {
+      u_offsetX_ += 0.01f;
+    }
+
+    // Y axis (up/down)
     if (keys[SDL_SCANCODE_UP] == true) {
-      u_offset_ += 0.01f;
-      std::println("Offset is: {}", u_offset_);
+      u_offsetY_ += 0.01f;
     }
-    // handle DOWN key
     if (keys[SDL_SCANCODE_DOWN] == true) {
-      u_offset_ -= 0.01f;
-      std::println("Offset is: {}", u_offset_);
+      u_offsetY_ -= 0.01f;
     }
+
+
+    // Z axis (forward/back - "in and out" from camera)
+    if (keys[SDL_SCANCODE_W] == true) {
+      u_offsetZ_ -= 0.01f; // more negative = further from camera
+    }
+    if (keys[SDL_SCANCODE_S] == true) {
+      u_offsetZ_ += 0.01f; // more positive  = closer to camera
+    }
+
   }
 };
 
@@ -486,4 +507,3 @@ int main(int argc, char* argv[]) {
 }
 
 // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
