@@ -18,7 +18,13 @@ target_include_directories(glad PUBLIC vendored/glad/include)
 
 # Create your game executable target as usual
 # WIN32 option is ignored on macOS and Linux
-add_executable(myproj WIN32 src/main.cpp)
+add_executable(myproj WIN32 
+  src/main.cpp
+  src/camera.cpp
+)
+
+# my own headers
+target_include_directories(myproj PRIVATE include)
 
 # glm (head-only)
 target_include_directories(myproj PRIVATE vendored/glm)

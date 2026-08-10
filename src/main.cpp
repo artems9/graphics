@@ -12,6 +12,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+// My Libraries
+#include "camera.hpp"
 
 struct SDLApplication {
   SDL_Window* window_{nullptr};
@@ -44,6 +46,12 @@ struct SDLApplication {
   float u_offsetY_{0.0f};
   float u_offsetX_{0.0f};
   float u_offsetZ_{-3.0f};  // start at -3 for immediate visibility
+  float u_rotate_{0.0f};
+  float u_scale_{0.5f};
+
+  // Camera
+  Camera camera_;
+
 
   // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -363,23 +371,44 @@ struct SDLApplication {
     glUseProgram(shaderProgram_);
 
 
-    // ------------------- TRANSLATION -----------------------
+    // ------------------- MODEL -----------------------
+
+    // ORDER OF OPERATIONS MATTERS !!!!
 
     // Model transformation by translating our object into world space
-    glm::mat4 translate = glm::translate(
+    glm::mat4 model = glm::translate(
         glm::mat4(1.0f), glm::vec3(u_offsetX_, u_offsetY_, u_offsetZ_));
+
+    // Update model matrix by applying rotation
+    u_rotate_ -= 1.0f;  // automatically rotate constantly
+    model = glm::rotate(model, glm::radians(u_rotate_), glm::vec3(0.0f, 1.0f, 0.0f));
+
+    // Update model matrix by applying rotation
+    model = glm::scale(model, glm::vec3(u_scale_, u_scale_, u_scale_));
 
     // uniform vairable name must match the one declared across shaders
     GLint uniformLocation =
         glGetUniformLocation(shaderProgram_, "u_modelMatrix");
 
     if (uniformLocation >= 0) {
-      glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &translate[0][0]);
+      glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &model[0][0]);
     } else {
       std::println("Could not find u_modelMatrix location");
       exit(EXIT_FAILURE);
     }
 
+    // ------------------- CAMERA  -----------------------
+    glm::mat4 view = camera_.getViewMatrix();
+    // Retrieve location of perspective matrix uniform
+    GLint uViewLocation =
+        glGetUniformLocation(shaderProgram_, "u_viewMatrix");
+
+    if (uViewLocation >= 0) {
+      glUniformMatrix4fv(uViewLocation, 1, GL_FALSE, &view[0][0]);
+    } else {
+      std::println("Could not find u_viewMatrix location");
+      exit(EXIT_FAILURE);
+    }
     // ------------------- PROJECTION -----------------------
 
     // Projection matrix (in perspective)
@@ -404,8 +433,6 @@ struct SDLApplication {
   void draw() {
     // enable attributes
     glBindVertexArray(vao_);
-    // select VBO we want to enable
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
     // render indexed data
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
     // stop using current pipeline, unnecessary if we only have 1 pipleine
@@ -465,29 +492,44 @@ struct SDLApplication {
     // tells you the CURRENT STATE of the keyboard (every frame)
     const bool* keys = SDL_GetKeyboardState(nullptr);
 
-    // X axis (left/right)
+    // ============================= ARROW KEYS MOVE OBJECT ================
+    // X axis (left)
     if (keys[SDL_SCANCODE_LEFT] == true) {
       u_offsetX_ -= 0.01f;
     }
+    // X axis (right)
     if (keys[SDL_SCANCODE_RIGHT] == true) {
       u_offsetX_ += 0.01f;
     }
 
-    // Y axis (up/down)
+    // Y axis (up)
     if (keys[SDL_SCANCODE_UP] == true) {
       u_offsetY_ += 0.01f;
     }
+    // Y axis (down)
     if (keys[SDL_SCANCODE_DOWN] == true) {
-      u_offsetY_ -= 0.01f;
-    }
+      u_offsetY_ -= 0.01f; }
 
+    // ============================= WASD KEYS MOVE CAMERA ================
 
-    // Z axis (forward/back - "in and out" from camera)
+    float speed = 0.1f;     // NOTE: temporary. make better abstraction later.
+
+    // Z axis (forward)
     if (keys[SDL_SCANCODE_W] == true) {
-      u_offsetZ_ -= 0.01f; // more negative = further from camera
+      camera_.moveForward(speed);      
     }
+    // Z axis (backward)
     if (keys[SDL_SCANCODE_S] == true) {
-      u_offsetZ_ += 0.01f; // more positive  = closer to camera
+      camera_.moveBackward(speed);      
+    }
+
+    // X axis (left)
+    if (keys[SDL_SCANCODE_A] == true) {
+      camera_.moveLeft(speed);      
+    }
+    // X axis (right)
+    if (keys[SDL_SCANCODE_D] == true) {
+      camera_.moveRight(speed);      
     }
 
   }
