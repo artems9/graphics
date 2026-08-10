@@ -9,13 +9,14 @@ class Camera {
     // Produces and returns 4x4 view matrix
     glm::mat4 getViewMatrix() const;
 
+    void moveMouse(float x, float y);
     void moveForward(float speed);
     void moveBackward(float speed);
     void moveLeft(float speed);
     void moveRight(float speed);
   
   private:
-    glm::vec3 eye_;
+    glm::vec3 camPos_;
     glm::vec3 viewDir_;
     glm::vec3 upVec_;
 };

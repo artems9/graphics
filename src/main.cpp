@@ -45,13 +45,13 @@ struct SDLApplication {
 
   float u_offsetY_{0.0f};
   float u_offsetX_{0.0f};
-  float u_offsetZ_{-3.0f};  // start at -3 for immediate visibility
+  float u_offsetZ_{-3.0f}; // start at -3 for immediate visibility
   float u_rotate_{0.0f};
   float u_scale_{0.5f};
 
   // Camera
   Camera camera_;
-
+  bool mouseCapturing_{true};
 
   // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -115,6 +115,8 @@ struct SDLApplication {
               << '\n';
 
     // setup vsync 1 = on, 0 = off, -1 = adaptive (falls back if unsupported)
+    // "wait for the monitor's vertical blank before swapping buffers" — caps
+    // your framerate at the monitor's refresh rate and prevents screen tearing
     SDL_GL_SetSwapInterval(1);
   }
 
@@ -131,6 +133,9 @@ struct SDLApplication {
       throw std::runtime_error(std::string("Window creation failed: ") +
                                SDL_GetError());
     }
+
+    // locks and hides mouse in center for FPS-like relative movement
+    SDL_SetWindowRelativeMouseMode(window_, true);
   }
 
   // Configures the OpenGL context attributes before creating the context.
@@ -268,7 +273,7 @@ struct SDLApplication {
 
     // select VBO to use
     // GL_ARRAY_BUFFER can be thought of as:
-    // A pointer (or handle) to the currently selected VBO.
+    // A pointer (or handle) currently selected VBO.
     // so subsequent functions operating on GL_ARRAY_BUFFER refer to bound vbo
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
 
@@ -370,7 +375,6 @@ struct SDLApplication {
     // Use shader program
     glUseProgram(shaderProgram_);
 
-
     // ------------------- MODEL -----------------------
 
     // ORDER OF OPERATIONS MATTERS !!!!
@@ -380,8 +384,9 @@ struct SDLApplication {
         glm::mat4(1.0f), glm::vec3(u_offsetX_, u_offsetY_, u_offsetZ_));
 
     // Update model matrix by applying rotation
-    u_rotate_ -= 1.0f;  // automatically rotate constantly
-    model = glm::rotate(model, glm::radians(u_rotate_), glm::vec3(0.0f, 1.0f, 0.0f));
+    u_rotate_ -= 1.0f; // automatically rotate constantly
+    model = glm::rotate(
+        model, glm::radians(u_rotate_), glm::vec3(0.0f, 1.0f, 0.0f));
 
     // Update model matrix by applying rotation
     model = glm::scale(model, glm::vec3(u_scale_, u_scale_, u_scale_));
@@ -400,8 +405,7 @@ struct SDLApplication {
     // ------------------- CAMERA  -----------------------
     glm::mat4 view = camera_.getViewMatrix();
     // Retrieve location of perspective matrix uniform
-    GLint uViewLocation =
-        glGetUniformLocation(shaderProgram_, "u_viewMatrix");
+    GLint uViewLocation = glGetUniformLocation(shaderProgram_, "u_viewMatrix");
 
     if (uViewLocation >= 0) {
       glUniformMatrix4fv(uViewLocation, 1, GL_FALSE, &view[0][0]);
@@ -481,15 +485,31 @@ struct SDLApplication {
 
   void getInput() {
     SDL_Event event;
-
     // SDL_PollEvent() automatically calls SDL_PumpEvents() before checking
     // event queue, handles everything that happened since last frame
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_EVENT_QUIT) {
         running_ = false;
+
+      } else if (event.type == SDL_EVENT_MOUSE_MOTION && mouseCapturing_) {
+        // only steer the camera while the mouse is captured
+        camera_.moveMouse(event.motion.xrel, event.motion.yrel);
+
+      } else if (event.type == SDL_EVENT_KEY_DOWN &&
+                 event.key.scancode == SDL_SCANCODE_ESCAPE) {
+        // one-shot: fires once per press, not every frame it's held
+        // release the mouse so it can leave the window
+        mouseCapturing_ = false;
+        SDL_SetWindowRelativeMouseMode(window_, false);
+
+      } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                 !mouseCapturing_) {
+        // clicking back into the window re-captures the mouse
+        mouseCapturing_ = true;
+        SDL_SetWindowRelativeMouseMode(window_, true);
       }
     }
-    // tells you the CURRENT STATE of the keyboard (every frame)
+    // polls current state, every frame
     const bool* keys = SDL_GetKeyboardState(nullptr);
 
     // ============================= ARROW KEYS MOVE OBJECT ================
@@ -508,30 +528,30 @@ struct SDLApplication {
     }
     // Y axis (down)
     if (keys[SDL_SCANCODE_DOWN] == true) {
-      u_offsetY_ -= 0.01f; }
+      u_offsetY_ -= 0.01f;
+    }
 
     // ============================= WASD KEYS MOVE CAMERA ================
 
-    float speed = 0.1f;     // NOTE: temporary. make better abstraction later.
+    float speed = 0.1f; // NOTE: temporary. make better abstraction later.
 
     // Z axis (forward)
     if (keys[SDL_SCANCODE_W] == true) {
-      camera_.moveForward(speed);      
+      camera_.moveForward(speed);
     }
     // Z axis (backward)
     if (keys[SDL_SCANCODE_S] == true) {
-      camera_.moveBackward(speed);      
+      camera_.moveBackward(speed);
     }
 
     // X axis (left)
     if (keys[SDL_SCANCODE_A] == true) {
-      camera_.moveLeft(speed);      
+      camera_.moveLeft(speed);
     }
     // X axis (right)
     if (keys[SDL_SCANCODE_D] == true) {
-      camera_.moveRight(speed);      
+      camera_.moveRight(speed);
     }
-
   }
 };
 
