@@ -14,22 +14,21 @@
 #include <vector>
 // My Libraries
 #include "camera.hpp"
+#include "window.hpp"
 
 struct SDLApplication {
-  SDL_Window* window_{nullptr};
-  SDL_GLContext glContext_{nullptr};
-  bool running_{true};
+  bool running_                             {true};
+  double fpsTimer_                          {0.0};
+  int frameCount_                           {0};
+  static constexpr double kMaxFrameTime     {0.25};
+  static constexpr double kFixedSecDt       {1.0 / 60.0};
+  Uint64 frameStart_                        {0};
+  double accumulatedTime_                   {0.0};
 
-  // fps tracking
-  double fpsTimer_{0.0};
-  int frameCount_{0};
+  Camera camera_;
+  Window window_; 
 
-  // timing
-  static constexpr double kMaxFrameTime{0.25};  // for clamping irregularities
-  static constexpr double kFixedDt{1.0 / 60.0}; // for physics (in seconds)
-  Uint64 frameStart_{0};
-  double accumulatedTime_{0.0};
-
+  //=========================== PER OBJECT (MESH) =========================
   // triangle
   // Vertex Array Object (VAO) - How to interpret the data.
   // Stores the vertex attribute layout and the VBO/IBO bindings needed to
@@ -49,25 +48,11 @@ struct SDLApplication {
   float u_rotate_{0.0f};
   float u_scale_{0.5f};
 
-  // Camera
-  Camera camera_;
-  bool mouseCapturing_{true};
 
   // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
   // constructor
   SDLApplication() {
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-      SDL_Quit();
-      throw std::runtime_error(std::string("SDL_Init failed: ") +
-                               SDL_GetError());
-    }
-
-    setOpenglContextAttributes();
-
-    createWindow();
-
-    initOpengl();
 
     setupVertices();
 
@@ -79,81 +64,9 @@ struct SDLApplication {
     frameStart_ = SDL_GetTicksNS();
   }
 
-  // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-  // destructor
-  ~SDLApplication() {
-    SDL_GL_DestroyContext(glContext_);
-    SDL_DestroyWindow(window_);
-    SDL_Quit();
-  }
+  ~SDLApplication() = default;
 
   // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-  void initOpengl() {
-    // create the OPENGL context and attach to SDL window
-    // tells SDL_GL_SwapWindow() WHERE to display
-    glContext_ = SDL_GL_CreateContext(window_);
-    if (!glContext_) {
-      SDL_DestroyWindow(window_);
-      throw std::runtime_error(std::string("GL context creation failed: ") +
-                               SDL_GetError());
-    }
-
-    // load all OPENGL function pointers via GLAD, using SDL to find them
-    if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress)) {
-      SDL_GL_DestroyContext(glContext_);
-      SDL_DestroyWindow(window_);
-      throw std::runtime_error("Failed to initialize GLAD");
-    }
-
-    // print OPENGL info and verify the OPENGL setup works as intended
-    std::cout << "Vendor   : " << glGetString(GL_VENDOR) << '\n';
-    std::cout << "Renderer : " << glGetString(GL_RENDERER) << '\n';
-    std::cout << "Version  : " << glGetString(GL_VERSION) << '\n';
-    std::cout << "GLSL     : " << glGetString(GL_SHADING_LANGUAGE_VERSION)
-              << '\n';
-
-    // setup vsync 1 = on, 0 = off, -1 = adaptive (falls back if unsupported)
-    // "wait for the monitor's vertical blank before swapping buffers" — caps
-    // your framerate at the monitor's refresh rate and prevents screen tearing
-    SDL_GL_SetSwapInterval(1);
-  }
-
-  // SDL window creation
-  void createWindow() {
-    window_ = SDL_CreateWindow("MyWindow",          // window title
-                               800,                 // width in pixels
-                               600,                 // height in pixels
-                               SDL_WINDOW_RESIZABLE // flags go here
-                                   | SDL_WINDOW_OPENGL);
-
-    if (!window_) {
-      SDL_Quit();
-      throw std::runtime_error(std::string("Window creation failed: ") +
-                               SDL_GetError());
-    }
-
-    // locks and hides mouse in center for FPS-like relative movement
-    SDL_SetWindowRelativeMouseMode(window_, true);
-  }
-
-  // Configures the OpenGL context attributes before creating the context.
-  void setOpenglContextAttributes() {
-    // latest version supported on MACOS is 4.1
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-
-    // uses modern version of OPENGL, deprecated functions are disabled
-    SDL_GL_SetAttribute(
-        SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-
-    // enable double buffering to avoid single buffer screen flickering
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-
-    // request 24-bit depth buffer for depth testing
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-  }
 
   void setupPipeline() {
     const std::string vertexShaderSource =
@@ -353,7 +266,7 @@ struct SDLApplication {
   void renderFrame() {
     preDraw();
     draw();
-    SDL_GL_SwapWindow(window_);
+    window_.swapBuffers();
   }
 
   // set up OPENGL state
@@ -446,7 +359,6 @@ struct SDLApplication {
   void updateFpsCounter(const double frameTime) {
     fpsTimer_ += frameTime;
     frameCount_++;
-
     if (fpsTimer_ >= 1.0) { // refresh once a second
       // frameCount_ / fpsTimer_ rather than averaging 1/frameTime each frame —
       // this gives you the true average FPS over that second (total frames
@@ -454,10 +366,7 @@ struct SDLApplication {
       // which behaves oddly when frame times vary (a few very fast or very slow
       // frames skew a naive average much more than they should).
       double fps = frameCount_ / fpsTimer_;
-      std::string title =
-          "MyWindow - FPS: " + std::to_string(static_cast<int>(fps));
-      SDL_SetWindowTitle(window_, title.c_str());
-
+      window_.setTitle(("MyWindow - FPS: " + std::to_string(static_cast<int>(fps))).c_str());
       fpsTimer_ = 0.0;
       frameCount_ = 0;
     }
@@ -491,7 +400,7 @@ struct SDLApplication {
       if (event.type == SDL_EVENT_QUIT) {
         running_ = false;
 
-      } else if (event.type == SDL_EVENT_MOUSE_MOTION && mouseCapturing_) {
+      } else if (event.type == SDL_EVENT_MOUSE_MOTION && window_.isMouseCaptured()) {
         // only steer the camera while the mouse is captured
         camera_.moveMouse(event.motion.xrel, event.motion.yrel);
 
@@ -499,14 +408,12 @@ struct SDLApplication {
                  event.key.scancode == SDL_SCANCODE_ESCAPE) {
         // one-shot: fires once per press, not every frame it's held
         // release the mouse so it can leave the window
-        mouseCapturing_ = false;
-        SDL_SetWindowRelativeMouseMode(window_, false);
+        window_.setMouseCaptured(false);
 
       } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-                 !mouseCapturing_) {
+                 !window_.isMouseCaptured()) {
         // clicking back into the window re-captures the mouse
-        mouseCapturing_ = true;
-        SDL_SetWindowRelativeMouseMode(window_, true);
+        window_.setMouseCaptured(true);
       }
     }
     // polls current state, every frame
@@ -557,14 +464,24 @@ struct SDLApplication {
 
 // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+// TODO: SDLLibrary RAII wrapper
+
 int main(int argc, char* argv[]) {
+  if (!SDL_Init(SDL_INIT_VIDEO)) {
+    SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_Init failed: %s", SDL_GetError());
+    return EXIT_FAILURE; // SDL_Init never succeeded, nothing to quit
+  }
+
   try {
     SDLApplication app{};
     app.run();
   } catch (const std::exception& e) {
     SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Error: %s", e.what());
+    SDL_Quit();
     return EXIT_FAILURE;
   }
+
+  SDL_Quit();
   return EXIT_SUCCESS;
 }
 

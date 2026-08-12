@@ -21,6 +21,7 @@ target_include_directories(glad PUBLIC vendored/glad/include)
 add_executable(myproj WIN32 
   src/main.cpp
   src/camera.cpp
+  src/window.cpp
 )
 
 # my own headers
