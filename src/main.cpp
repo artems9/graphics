@@ -21,7 +21,7 @@ struct SDLApplication {
   double fpsTimer_                          {0.0};
   int frameCount_                           {0};
   static constexpr double kMaxFrameTime     {0.25};
-  static constexpr double kFixedSecDt       {1.0 / 60.0};
+  static constexpr double kFixedDt       {1.0 / 60.0};
   Uint64 frameStart_                        {0};
   double accumulatedTime_                   {0.0};
 
