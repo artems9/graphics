@@ -22,6 +22,7 @@ add_executable(myproj WIN32
   src/main.cpp
   src/camera.cpp
   src/window.cpp
+  src/shader.cpp
 )
 
 # my own headers

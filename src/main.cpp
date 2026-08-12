@@ -15,6 +15,7 @@
 // My Libraries
 #include "camera.hpp"
 #include "window.hpp"
+#include "shader.hpp"
 
 struct SDLApplication {
   bool running_                             {true};
@@ -25,8 +26,9 @@ struct SDLApplication {
   Uint64 frameStart_                        {0};
   double accumulatedTime_                   {0.0};
 
-  Camera camera_;
   Window window_; 
+  Shader shader_;
+  Camera camera_;
 
   //=========================== PER OBJECT (MESH) =========================
   // triangle
@@ -40,7 +42,6 @@ struct SDLApplication {
   // Index Buffer Object (IBO) - Which vertices to draw.
   // Stores indices that define how vertices are reused to form primitives.
   GLuint ibo_{0};
-  GLuint shaderProgram_{0};
 
   float u_offsetY_{0.0f};
   float u_offsetX_{0.0f};
@@ -56,8 +57,6 @@ struct SDLApplication {
 
     setupVertices();
 
-    setupPipeline();
-
     // start clock here to:
     // exclude SDL and OPENGL initialization and setup times
     // handle (edge case) first call in loop
@@ -67,91 +66,6 @@ struct SDLApplication {
   ~SDLApplication() = default;
 
   // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-  void setupPipeline() {
-    const std::string vertexShaderSource =
-        getShaderSource("./shaders/vert.glsl");
-    const std::string fragmentShaderSource =
-        getShaderSource("./shaders/frag.glsl");
-
-    shaderProgram_ =
-        createShaderProgram(vertexShaderSource, fragmentShaderSource);
-  }
-
-  std::string getShaderSource(const std::string& path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-      throw std::runtime_error("Could not open shader file: " + path);
-    }
-
-    std::stringstream buffer;
-    // get whole file into stream
-    buffer << file.rdbuf();
-    return buffer.str();
-  }
-
-  GLuint createShaderProgram(const std::string& vertexShaderSource,
-                             const std::string& fragmentShaderSource) {
-    GLuint programObj = glCreateProgram();
-
-    GLuint vertexShader =
-        getCompiledShader(GL_VERTEX_SHADER, vertexShaderSource);
-
-    GLuint fragmentShader =
-        getCompiledShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
-
-    glAttachShader(programObj, vertexShader);
-    glAttachShader(programObj, fragmentShader);
-    glLinkProgram(programObj);
-
-    // validate program
-    glValidateProgram(programObj);
-
-    // glDetachShader, glDeleteShader
-
-    return programObj;
-  }
-
-  void verifyCompilation(GLuint shaderObj) {
-    GLint compilationResult;
-    glGetShaderiv(shaderObj, GL_COMPILE_STATUS, &compilationResult);
-
-    if (compilationResult == GL_FALSE) {
-      // find require buffer size for the info log
-      GLint msgLength;
-      glGetShaderiv(shaderObj, GL_INFO_LOG_LENGTH, &msgLength);
-
-      // allocate buffer for outputting error message
-      std::string errorMsg(msgLength, '\0');
-
-      // Retrieve the shader compiler's error log.
-      glGetShaderInfoLog(shaderObj, msgLength, nullptr, errorMsg.data());
-
-      throw std::runtime_error("Shader compilation failed:\n" + errorMsg);
-
-      // delete broken shader
-      glDeleteShader(shaderObj);
-    }
-  }
-
-  GLuint getCompiledShader(GLuint type, const std::string& shaderSource) {
-    GLuint shaderObj;
-
-    // Create shader object specifically for the type passed in
-    if (type == GL_VERTEX_SHADER) {
-      shaderObj = glCreateShader(GL_VERTEX_SHADER);
-    } else if (type == GL_FRAGMENT_SHADER) {
-      shaderObj = glCreateShader(GL_FRAGMENT_SHADER);
-    }
-
-    const char* src{shaderSource.c_str()};
-    glShaderSource(shaderObj, 1, &src, nullptr);
-    glCompileShader(shaderObj);
-
-    verifyCompilation(shaderObj);
-
-    return shaderObj;
-  }
 
   void setupVertices() {
 
@@ -271,11 +185,9 @@ struct SDLApplication {
 
   // set up OPENGL state
   void preDraw() {
-    // Disable depth test and face culling
-    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 
-    // set up viewport
     // maps Normalized Device Coordinates into framebuffer size of window
     glViewport(0, 0, 800, 600);
 
@@ -285,8 +197,7 @@ struct SDLApplication {
     // Clear color and depth buffers
     glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
-    // Use shader program
-    glUseProgram(shaderProgram_);
+    shader_.use();
 
     // ------------------- MODEL -----------------------
 
@@ -304,28 +215,11 @@ struct SDLApplication {
     // Update model matrix by applying rotation
     model = glm::scale(model, glm::vec3(u_scale_, u_scale_, u_scale_));
 
-    // uniform vairable name must match the one declared across shaders
-    GLint uniformLocation =
-        glGetUniformLocation(shaderProgram_, "u_modelMatrix");
-
-    if (uniformLocation >= 0) {
-      glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &model[0][0]);
-    } else {
-      std::println("Could not find u_modelMatrix location");
-      exit(EXIT_FAILURE);
-    }
+    shader_.setMat4("u_modelMatrix", &model[0][0]);
 
     // ------------------- CAMERA  -----------------------
     glm::mat4 view = camera_.getViewMatrix();
-    // Retrieve location of perspective matrix uniform
-    GLint uViewLocation = glGetUniformLocation(shaderProgram_, "u_viewMatrix");
-
-    if (uViewLocation >= 0) {
-      glUniformMatrix4fv(uViewLocation, 1, GL_FALSE, &view[0][0]);
-    } else {
-      std::println("Could not find u_viewMatrix location");
-      exit(EXIT_FAILURE);
-    }
+    shader_.setMat4("u_viewMatrix", &view[0][0]);
     // ------------------- PROJECTION -----------------------
 
     // Projection matrix (in perspective)
@@ -334,16 +228,7 @@ struct SDLApplication {
                                              0.1f,   // how close we can see
                                              10.0f); // how far we can see
 
-    // Retrieve location of perspective matrix uniform
-    GLint uPerspectiveLocation =
-        glGetUniformLocation(shaderProgram_, "u_perspectiveProjection");
-
-    if (uPerspectiveLocation >= 0) {
-      glUniformMatrix4fv(uPerspectiveLocation, 1, GL_FALSE, &perspective[0][0]);
-    } else {
-      std::println("Could not find u_pespectiveProjection location");
-      exit(EXIT_FAILURE);
-    }
+    shader_.setMat4("u_perspectiveProjection", &perspective[0][0]);
   }
 
   // OPENGL draw calls
@@ -353,7 +238,7 @@ struct SDLApplication {
     // render indexed data
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
     // stop using current pipeline, unnecessary if we only have 1 pipleine
-    glUseProgram(0);
+    shader_.unuse();
   }
 
   void updateFpsCounter(const double frameTime) {
