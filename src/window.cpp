@@ -83,3 +83,10 @@
   }
 
   const bool Window::isMouseCaptured() const { return mouseCaptured_; }
+
+  void Window::resize(int width, int height) {
+    // maps Normalized Device Coordinates into framebuffer size of window
+    width_  = width;
+    height_ = height;
+    glViewport(0, 0, width_, height_);
+  }

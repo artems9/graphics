@@ -16,6 +16,7 @@
 #include "camera.hpp"
 #include "window.hpp"
 #include "shader.hpp"
+#include "mesh.hpp"
 
 struct SDLApplication {
   bool running_                             {true};
@@ -26,22 +27,10 @@ struct SDLApplication {
   Uint64 frameStart_                        {0};
   double accumulatedTime_                   {0.0};
 
-  Window window_; 
-  Shader shader_;
-  Camera camera_;
-
-  //=========================== PER OBJECT (MESH) =========================
-  // triangle
-  // Vertex Array Object (VAO) - How to interpret the data.
-  // Stores the vertex attribute layout and the VBO/IBO bindings needed to
-  // interpret vertex data.
-  GLuint vao_{0};
-  // Vertex Buffer Object (VBO) - What the data is.
-  // Stores vertex data (positions, colors, UVs, etc.) in GPU memory.
-  GLuint vbo_{0};
-  // Index Buffer Object (IBO) - Which vertices to draw.
-  // Stores indices that define how vertices are reused to form primitives.
-  GLuint ibo_{0};
+  Window  window_; 
+  Shader  shader_;
+  Camera  camera_;
+  Mesh    mesh_;
 
   float u_offsetY_{0.0f};
   float u_offsetX_{0.0f};
@@ -49,115 +38,12 @@ struct SDLApplication {
   float u_rotate_{0.0f};
   float u_scale_{0.5f};
 
-
-  // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-  // constructor
-  SDLApplication() {
-
-    setupVertices();
-
+  // infinite loop
+  void run() {
     // start clock here to:
     // exclude SDL and OPENGL initialization and setup times
     // handle (edge case) first call in loop
     frameStart_ = SDL_GetTicksNS();
-  }
-
-  ~SDLApplication() = default;
-
-  // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-  void setupVertices() {
-
-    // OPENGL uses counter clockwise winding order by default
-    // rendering QUAD
-    const std::vector<GLfloat> vertexData{
-        // clang-format off
-        // Vertex 0 (bottom left)
-        -0.5f, -0.5f, 0.0f, // position x, y, z
-        1.0f, 0.0f, 0.0f,   // color    r, b, b
-        // Vertex 1 (bottom right)
-        0.5f, -0.5f, 0.0f, // position
-        0.0f, 1.0f, 0.0f, // color
-        // Vertex 2 (top right)
-        0.5f, 0.5f, 0.0f, // position
-        0.0f, 0.0f, 1.0f, // color
-        // Vertex 3 (top left)
-        -0.5f, 0.5f, 0.0f, // position
-        1.0f, 0.0f, 1.0f, // color
-        // clang-format on
-    };
-
-    // generate x amount of VAO (instructions for reading the VBO)
-    glGenVertexArrays(1, &vao_);
-
-    // select VAO to use
-    glBindVertexArray(vao_);
-
-    //===================/ SETUP VBO /===================
-    // generate x amount of VBO (actual vertex data)
-    glGenBuffers(1, &vbo_);
-
-    // select VBO to use
-    // GL_ARRAY_BUFFER can be thought of as:
-    // A pointer (or handle) currently selected VBO.
-    // so subsequent functions operating on GL_ARRAY_BUFFER refer to bound vbo
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-
-    // populate target buffer used by GPU, with data from VBO (vertexPositions)
-    glBufferData(GL_ARRAY_BUFFER,                     // target buffer
-                 vertexData.size() * sizeof(GLfloat), // size in bytes
-                 vertexData.data(),                   // pointer to data
-                 GL_STATIC_DRAW);                     // usage type
-
-    const std::vector<GLuint> iboData{0, 1, 3, 1, 2, 3};
-
-    // setup IBO (Index Buffer Object) or EBO (Element Buffer Object)
-    glGenBuffers(1, &ibo_);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_);
-    // populate IBO
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 iboData.size() * sizeof(GLuint),
-                 iboData.data(),
-                 GL_STATIC_DRAW);
-
-    // ================== SETUP VAO POSITION =====================
-    // populate the currently bound VAO with instructions
-    // by telling opengl how to interpret currently bound VBO
-    glVertexAttribPointer(
-        0,        // attribute index, corresponds to glEnableVertexAttribArray
-        3,        // num. components per attribute (x, y, z)
-        GL_FLOAT, // type
-        GL_FALSE, // data value normalization
-        sizeof(GLfloat) * 6, // stride (byte offset between attribute)
-        nullptr // offset into the bound VBO where this attribute begins
-    );
-    // Enable attributes for input to the vertex shader.
-    glEnableVertexAttribArray(0);
-
-    // ================== SETUP VAO COLOR =====================
-    glVertexAttribPointer(
-        1,        // attribute index, corresponds to glEnableVertexAttribArray
-        3,        // num. components per attribute (r, g, b)
-        GL_FLOAT, // type
-        GL_FALSE, // data value normalization
-        sizeof(GLfloat) * 6, // stride (byte offset between attribute)
-        reinterpret_cast<const void*>(
-            sizeof(GLfloat) *
-            3) // offset into the bound VBO where this attribute begins
-    );
-    // Enable attribute for input to the vertex shader.
-    glEnableVertexAttribArray(1);
-
-    // Unbind currently bound VAO
-    glBindVertexArray(0);
-    // Disable any attributes previously enabled in VAO
-    glDisableVertexAttribArray(0);
-    glDisableVertexAttribArray(1);
-  }
-
-  // infinite loop
-  void run() {
     while (running_) {
       advanceFrame();
     }
@@ -167,6 +53,7 @@ struct SDLApplication {
   void advanceFrame() {
     double frameTime = getFrameTime();
     accumulatedTime_ += frameTime;
+
     // 1. get whatever user input to act on
     getInput();
     // 2. update using fixed-step (0 or more, depends on accumulatedTime_)
@@ -178,18 +65,15 @@ struct SDLApplication {
   }
 
   void renderFrame() {
-    preDraw();
+    setup();
     draw();
     window_.swapBuffers();
   }
 
   // set up OPENGL state
-  void preDraw() {
+  void setup() {
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-
-    // maps Normalized Device Coordinates into framebuffer size of window
-    glViewport(0, 0, 800, 600);
 
     // Initialize clear color (background of screen)
     glClearColor(1.f, 1.f, 0.f, 1.f);
@@ -233,10 +117,7 @@ struct SDLApplication {
 
   // OPENGL draw calls
   void draw() {
-    // enable attributes
-    glBindVertexArray(vao_);
-    // render indexed data
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
+    mesh_.draw();
     // stop using current pipeline, unnecessary if we only have 1 pipleine
     shader_.unuse();
   }
@@ -285,7 +166,8 @@ struct SDLApplication {
       if (event.type == SDL_EVENT_QUIT) {
         running_ = false;
 
-      } else if (event.type == SDL_EVENT_MOUSE_MOTION && window_.isMouseCaptured()) {
+      } else if (event.type == SDL_EVENT_MOUSE_MOTION 
+              && window_.isMouseCaptured()) {
         // only steer the camera while the mouse is captured
         camera_.moveMouse(event.motion.xrel, event.motion.yrel);
 
@@ -299,7 +181,9 @@ struct SDLApplication {
                  !window_.isMouseCaptured()) {
         // clicking back into the window re-captures the mouse
         window_.setMouseCaptured(true);
-      }
+      } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
+        window_.resize(event.window.data1, event.window.data2);
+        }
     }
     // polls current state, every frame
     const bool* keys = SDL_GetKeyboardState(nullptr);
@@ -347,10 +231,8 @@ struct SDLApplication {
   }
 };
 
-// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 // TODO: SDLLibrary RAII wrapper
-
 int main(int argc, char* argv[]) {
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     SDL_LogError(SDL_LOG_CATEGORY_ERROR, "SDL_Init failed: %s", SDL_GetError());
@@ -358,7 +240,7 @@ int main(int argc, char* argv[]) {
   }
 
   try {
-    SDLApplication app{};
+    SDLApplication app;
     app.run();
   } catch (const std::exception& e) {
     SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Error: %s", e.what());
@@ -370,4 +252,3 @@ int main(int argc, char* argv[]) {
   return EXIT_SUCCESS;
 }
 
-// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

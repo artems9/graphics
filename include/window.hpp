@@ -13,6 +13,7 @@ class Window {
     Window& operator=(Window&& other) = delete;
 
     void swapBuffers();
+    void resize(int width, int height);
     void setTitle(const char* title);
     void setMouseCaptured(bool captured);
     const bool isMouseCaptured() const;
