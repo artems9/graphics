@@ -17,33 +17,35 @@
 #include "window.hpp"
 #include "shader.hpp"
 #include "mesh.hpp"
+#include "clock.hpp"
 
 struct SDLApplication {
   bool running_                             {true};
+
+  // only used in updateFpsCounter() to display window title as fps count
+  // TODO: make its own class 
   double fpsTimer_                          {0.0};
   int frameCount_                           {0};
-  static constexpr double kMaxFrameTime     {0.25};
-  static constexpr double kFixedDt       {1.0 / 60.0};
-  Uint64 frameStart_                        {0};
-  double accumulatedTime_                   {0.0};
 
-  Window  window_; 
-  Shader  shader_;
-  Camera  camera_;
-  Mesh    mesh_;
-
+  // will leave here for now but in the future will abstract into class?
   float u_offsetY_{0.0f};
   float u_offsetX_{0.0f};
   float u_offsetZ_{-3.0f}; // start at -3 for immediate visibility
   float u_rotate_{0.0f};
   float u_scale_{0.5f};
 
+  Window  window_; 
+  Shader  shader_;
+  Camera  camera_;
+  Mesh    mesh_;
+  Clock   clock_;
+
   // infinite loop
   void run() {
     // start clock here to:
     // exclude SDL and OPENGL initialization and setup times
     // handle (edge case) first call in loop
-    frameStart_ = SDL_GetTicksNS();
+    clock_.start();
     while (running_) {
       advanceFrame();
     }
@@ -51,8 +53,7 @@ struct SDLApplication {
 
   // easy to add breakpoint for debugging
   void advanceFrame() {
-    double frameTime = getFrameTime();
-    accumulatedTime_ += frameTime;
+    double frameTime = clock_.getFrameTime();
 
     // 1. get whatever user input to act on
     getInput();
@@ -122,6 +123,7 @@ struct SDLApplication {
     shader_.unuse();
   }
 
+
   void updateFpsCounter(const double frameTime) {
     fpsTimer_ += frameTime;
     frameCount_++;
@@ -139,24 +141,13 @@ struct SDLApplication {
   }
 
   void updateWorld() {
-    while (accumulatedTime_ >= kFixedDt) {
+    while (clock_.shouldStep()) {
       // explicit param for readability and future reusability
       // updateLogic/Physics/Anything(kFixedDt);
-      accumulatedTime_ -= kFixedDt;
+      clock_.consumeStep();
     }
   }
 
-  double getFrameTime() {
-    Uint64 frameEnd = SDL_GetTicksNS();
-    double frameTime = (frameEnd - frameStart_) / 1e9; // convert to seconds
-    frameStart_ = frameEnd;
-
-    // clamp huge frame times for whatever reason
-    if (frameTime > kMaxFrameTime) {
-      frameTime = kMaxFrameTime;
-    }
-    return frameTime;
-  }
 
   void getInput() {
     SDL_Event event;

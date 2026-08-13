@@ -24,6 +24,7 @@ add_executable(myproj WIN32
   src/window.cpp
   src/shader.cpp
   src/mesh.cpp
+  src/clock.cpp
 )
 
 # my own headers
