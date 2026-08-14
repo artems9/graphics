@@ -27,7 +27,8 @@ void Camera::moveMouse(float x, float y) {
   // rotate viewDir_ by x radians
   viewDir_ = glm::rotate(viewDir_, glm::radians(-x * kMouseSens), upVec_);
   viewDir_ = glm::normalize(viewDir_); // snap length back to 1
-  // std::cout << std::fixed << std::setprecision(10) << glm::length(viewDir_) << '\n';
+  // std::cout << std::fixed << std::setprecision(10) << glm::length(viewDir_)
+  // << '\n';
 
   /*
    * - Every time the mouse moves, you call glm::rotate(viewDir_, angle,

@@ -20,5 +20,3 @@ double Clock::getFrameTime() {
 bool Clock::shouldStep() const { return accumulatedTime_ >= kFixedDt; }
 
 void Clock::consumeStep() { accumulatedTime_ -= kFixedDt; }
-
-

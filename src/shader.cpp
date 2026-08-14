@@ -4,26 +4,18 @@
 #include <stdexcept>
 
 Shader::Shader() {
-  const std::string vertexShaderSource =
-      getShaderSource("./shaders/vert.glsl");
+  const std::string vertexShaderSource = getShaderSource("./shaders/vert.glsl");
   const std::string fragmentShaderSource =
       getShaderSource("./shaders/frag.glsl");
 
-  program_ =
-      createShaderProgram(vertexShaderSource, fragmentShaderSource);
+  program_ = createShaderProgram(vertexShaderSource, fragmentShaderSource);
 }
 
-Shader::~Shader() {
-  glDeleteProgram(program_);
-}
+Shader::~Shader() { glDeleteProgram(program_); }
 
-void Shader::use() {
-  glUseProgram(program_);
-}
+void Shader::use() { glUseProgram(program_); }
 
-void Shader::unuse() {
-  glUseProgram(0);
-}
+void Shader::unuse() { glUseProgram(0); }
 
 // uniform var name must match the one declared across shaders
 // this function basically transfers data from CPU to GPU
@@ -49,14 +41,12 @@ std::string Shader::getShaderSource(const std::string& path) {
 }
 
 GLuint Shader::createShaderProgram(const std::string& vertexShaderSource,
-                           const std::string& fragmentShaderSource) { 
+                                   const std::string& fragmentShaderSource) {
   GLuint programObj = glCreateProgram();
 
-  GLuint vertexShader =
-      compile(GL_VERTEX_SHADER, vertexShaderSource);
+  GLuint vertexShader = compile(GL_VERTEX_SHADER, vertexShaderSource);
 
-  GLuint fragmentShader =
-      compile(GL_FRAGMENT_SHADER, fragmentShaderSource);
+  GLuint fragmentShader = compile(GL_FRAGMENT_SHADER, fragmentShaderSource);
 
   glAttachShader(programObj, vertexShader);
   glAttachShader(programObj, fragmentShader);
@@ -80,7 +70,6 @@ GLuint Shader::createShaderProgram(const std::string& vertexShaderSource,
 
   return programObj;
 }
-
 
 GLuint Shader::compile(GLuint type, const std::string& shaderSource) {
   GLuint shaderObj;
